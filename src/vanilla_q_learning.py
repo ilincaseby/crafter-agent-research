@@ -1,7 +1,7 @@
 import gym
 import crafter
 import torch.nn as nn
-import matplotlib as plt
+import matplotlib.pyplot as plt
 import torch
 import random
 from collections import deque
@@ -43,6 +43,8 @@ alpha = float(os.getenv('ALPHA', 0.95))
 eps = float(os.getenv('EPS', 0.01))
 log_path = os.getenv('LOG_PATH', '../logs/')
 save_path = os.getenv('SAVE_PATH', '../models/')
+plot_path = os.getenv('PLOT_PATH', '../plots/')
+achievement_window = max(1, int(os.getenv('ACHIEVEMENT_WINDOW', 50)))
 
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
 if torch.cuda.is_available():
@@ -62,9 +64,10 @@ def set_seed(seed=42):
         torch.backends.cudnn.benchmark = False
 
 def create_env():
+    os.makedirs(log_path, exist_ok=True)
     env = crafter.Env(seed=seed)
     env = crafter.Recorder(
-        env, '../logs',
+        env, log_path,
         save_stats=save_stats,
         save_video=save_video,
         save_episode=save_episode,
@@ -82,6 +85,7 @@ def eps_greedy(model, state, num_actions, eps=0.3):
 def play_and_store(model, env, er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done, num_actions, seq_length, eps=0.3):
     obs = env.reset()
     done = False
+    achievements = {}
     stack_frames = deque(maxlen=seq_length)
     for _ in range(seq_length):
         obs_empty = torch.empty((channels_in, height, weight), dtype=torch.float32).to(device)
@@ -92,6 +96,8 @@ def play_and_store(model, env, er_buffer_obs, er_buffer_future_obs, er_buffer_ac
         obs_for_model = torch.stack(list(stack_frames)).to(device)
         action = eps_greedy(model, obs_for_model, num_actions, eps)
         obs, reward, done, info = env.step(action)
+        for name, count in info.get('achievements', {}).items():
+            achievements[name] = max(achievements.get(name, 0), count)
         stack_frames.append(torch.permute(torch.tensor(obs).to(torch.float32), (2, 0, 1)).to(device))
         future_obs = torch.stack(list(stack_frames)).to(device)
         er_buffer_obs = torch.cat([er_buffer_obs, obs_for_model.unsqueeze(0).to(device)], dim = 0)
@@ -100,7 +106,48 @@ def play_and_store(model, env, er_buffer_obs, er_buffer_future_obs, er_buffer_ac
         er_buffer_reward = torch.cat([er_buffer_reward, torch.tensor([reward]).to(device)], dim = 0)
         er_done = torch.cat([er_done, torch.tensor([1 if done is True else 0]).to(device)])
         
-    return er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done
+    return er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done, achievements
+
+def save_training_plots(losses, episode_steps, episode_achievements):
+    os.makedirs(plot_path, exist_ok=True)
+    games = np.arange(1, len(losses) + 1)
+    for values, ylabel, title, filename in (
+        (losses, 'Average training loss', 'Average loss per game', 'average_loss.png'),
+        (episode_steps, 'Steps', 'Steps per game', 'steps_per_game.png'),
+    ):
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(games, values)
+        ax.set(xlabel='Game', ylabel=ylabel, title=title)
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(os.path.join(plot_path, filename))
+        plt.close(fig)
+
+    names = sorted({name for episode in episode_achievements for name in episode})
+    fig, ax = plt.subplots(figsize=(12, max(4, len(names) * 0.35)))
+    if names:
+        # Each cell is the fraction of recent games earning this achievement.
+        successes = np.array([
+            [episode.get(name, 0) > 0 for episode in episode_achievements]
+            for name in names
+        ], dtype=float)
+        cumulative = np.pad(np.cumsum(successes, axis=1), ((0, 0), (1, 0)))
+        ends = np.arange(1, len(games) + 1)
+        starts = np.maximum(0, ends - achievement_window)
+        rates = (cumulative[:, ends] - cumulative[:, starts]) / (ends - starts)
+        image = ax.imshow(rates, aspect='auto', interpolation='nearest',
+                          vmin=0, vmax=1, extent=(0.5, len(games) + 0.5, len(names) - 0.5, -0.5))
+        ax.set_yticks(np.arange(len(names)))
+        ax.set_yticklabels(names)
+        fig.colorbar(image, ax=ax, label='Fraction of recent games with achievement')
+    else:
+        ax.text(0.5, 0.5, 'No achievement data reported', ha='center', va='center',
+                transform=ax.transAxes)
+    ax.set(xlabel='Game', ylabel='Achievement',
+           title=f'Achievement consistency (rolling {achievement_window} games)')
+    fig.tight_layout()
+    fig.savefig(os.path.join(plot_path, 'achievement_consistency.png'))
+    plt.close(fig)
 
 def q_learning(
     env,
@@ -115,6 +162,9 @@ def q_learning(
     device
 ):
     updates = 0
+    episode_losses = []
+    episode_steps = []
+    episode_achievements = []
     for _ in range(num_games_played):
         # Init experience replay buffer
         er_buffer_obs = torch.empty(0, seq_length, channels_in, height, weight).to(device)
@@ -123,8 +173,11 @@ def q_learning(
         er_buffer_reward = torch.empty(0).to(device)
         er_done = torch.empty(0).to(device)
 
-        er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done = play_and_store(q_network, env, er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done, num_actions, seq_length, eps=eps)
+        er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done, achievements = play_and_store(q_network, env, er_buffer_obs, er_buffer_future_obs, er_buffer_action, er_buffer_reward, er_done, num_actions, seq_length, eps=eps)
         len_steps = er_buffer_action.shape[0]
+        episode_steps.append(len_steps)
+        episode_achievements.append(achievements)
+        total_loss = 0.0
         indices = torch.randperm(len_steps)
 
         random_er_buffer_obs = er_buffer_obs[indices]
@@ -150,12 +203,15 @@ def q_learning(
             next_state_q = discount_factor * (torch.tensor(1) - random_er_done[i:min(i + batch_train_size, len_steps)]) * max_next_state_q
             target = random_er_buffer_reward[i:min(i + batch_train_size, len_steps)] + next_state_q
             loss = loss_bellman(target, pred)
+            total_loss += loss.detach().item() * min(batch_train_size, len_steps - i)
             loss.backward()
             optimizer.step()
             updates += 1
             if updates % steps_updating == 0:
                 target_q_network.load_state_dict(q_network.state_dict())
+        episode_losses.append(total_loss / len_steps if len_steps else float('nan'))
     eps = eps * factor_decay_eps
+    save_training_plots(episode_losses, episode_steps, episode_achievements)
     return q_network, target_q_network
 
 if __name__ == '__main__':
@@ -170,4 +226,5 @@ if __name__ == '__main__':
                             hidden_size_inside_1, hidden_size_inside_2, num_actions).to(device)
     target_q_network.load_state_dict(q_network.state_dict())
     q_network, target_q_learning = q_learning(env, q_network, target_q_network, num_actions, num_games_played, eps, factor_decay_eps, discount_factor, steps_updating, device)
-    torch.save(q_network.state_dict(), save_path + 'rnn_q_network')
+    os.makedirs(save_path, exist_ok=True)
+    torch.save(q_network.state_dict(), os.path.join(save_path, 'rnn_q_network'))
