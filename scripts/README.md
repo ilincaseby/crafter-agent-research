@@ -11,15 +11,20 @@ python3 scripts/launch_fep.py \
 ```
 
 The launcher has no algorithm-specific training logic. For another algorithm,
-provide its name and Python entrypoint, for example after implementing PPO:
+provide its name and Python entrypoint. The PPO experiment is implemented:
 
 ```bash
 python3 scripts/launch_fep.py \
   --algorithm PPO \
-  --entrypoint src/ppo/train.py \
-  --image '~/images/crafter.sif' \
-  --requirements src/ppo/requirements.txt
+  --entrypoint src/ppo/experiment.py \
+  --image '~/images/qwen25-coder-sft.sif' \
+  --requirements src/ppo/requirements.txt \
+  --cpus-per-task 8 \
+  -- --device cuda --seeds 1 2 3 --total-timesteps 1000000
 ```
+
+See [PPO training, evaluation, and reports](../src/ppo/README.md) for the
+algorithm walkthrough and PPO-versus-random comparison.
 
 Source files are grouped by algorithm. The existing training script, network
 helpers, and notebook live together:
@@ -41,7 +46,10 @@ uppercased for run naming and metadata.
 
 Prerequisites:
 
-- Local Python 3.9+, `ssh`, and `rsync`; passwordless `ssh fep`.
+- Local Python 3.9+, `ssh`, and either `rsync` or `scp`; passwordless `ssh fep`.
+  Without `rsync` (for example on native Windows), the launcher transfers a
+  compressed snapshot with `scp` and extracts it using remote `tar`.
+  PPO itself requires Python 3.10+.
 - A readable container image already on FEP, with Bash, Python 3, `venv`,
   `pip`, and a GPU-compatible Python stack. The launcher does not build an image.
 - A requirements file **inside this repository**. DDQN's dependencies are

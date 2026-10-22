@@ -1,0 +1,9 @@
+{
+  "policy": "random",
+  "checkpoint": null,
+  "episodes": 100,
+  "seed_start": 1000000000,
+  "max_episode_steps": 10000,
+  "device": "cuda",
+  "action_selection": "uniform random"
+}

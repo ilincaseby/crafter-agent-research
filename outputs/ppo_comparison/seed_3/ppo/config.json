@@ -1,0 +1,22 @@
+{
+  "seed": 3,
+  "total_timesteps": 1000000,
+  "num_envs": 8,
+  "num_steps": 256,
+  "minibatch_size": 256,
+  "update_epochs": 4,
+  "learning_rate": 0.00025,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "clip_coef": 0.2,
+  "ent_coef": 0.01,
+  "vf_coef": 0.5,
+  "max_grad_norm": 0.5,
+  "target_kl": null,
+  "max_episode_steps": 10000,
+  "device": "cuda",
+  "sync_envs": false,
+  "torch_threads": 1,
+  "checkpoint_interval": 50,
+  "output_dir": "outputs/ppo_comparison/seed_3/ppo"
+}
