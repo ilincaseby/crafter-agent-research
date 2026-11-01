@@ -63,9 +63,9 @@ def aggregate_seeds(summaries):
     }
 
 
-def figure_image(figure, title):
+def figure_image(figure, title, *, layout_rect=None):
     stream = io.BytesIO()
-    figure.tight_layout()
+    figure.tight_layout(rect=layout_rect)
     figure.savefig(stream, format="png", dpi=130)
     plt.close(figure)
     image = base64.b64encode(stream.getvalue()).decode("ascii")

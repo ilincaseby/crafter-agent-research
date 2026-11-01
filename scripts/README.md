@@ -24,7 +24,26 @@ python3 scripts/launch_fep.py \
 ```
 
 See [PPO training, evaluation, and reports](../src/ppo/README.md) for the
-algorithm walkthrough and PPO-versus-random comparison.
+algorithm walkthrough, PPO-versus-random comparison, and the three-seed
+resource-masking ablation (`src/ppo/masking_experiment.py`). That ablation reuses
+the saved vanilla runs, trains masked PPO for at most 1M steps per seed, and
+produces mean/SD comparison plots plus evaluation behavior traces and GIFs.
+The next ablation, `src/ppo/frame_stacking_experiment.py`, reuses both completed
+PPO and Masked-PPO runs, trains masked PPO with four consecutive RGB frames from
+scratch, and places **all three approaches on the same metric plots**. Its
+snapshot must include `outputs/ppo_masking` for the saved baseline evidence.
+`src/ppo/resnet_experiment.py` adds the next ablation: masked, single-frame
+IMPALA-ResNet PPO at unchanged PPO hyperparameters. It reuses the three saved
+approaches in `outputs/ppo_frame_stacking` and produces four-way plots, parameter
+counts, matched evaluation, and behavioral evidence.
+`src/ppo/tuning.py` supports the controlled 200k-step hyperparameter sweep:
+initialize a hashed plan, dispatch task indices independently with bounded SLURM
+array concurrency, then finalize on a separate confirmation set without extra
+training. Do not use the earlier 1M-step reports as short-budget tuning baselines.
+`src/ppo/tuned_experiment.py` then trains the frozen winner from scratch at 1M
+steps per seed and compares it with original PPO, Masked-PPO, and masked IMPALA
+ResNet policies. It requires the saved `outputs/ppo_resnet` training evidence and
+only the tuning plan/selection/results JSONs (not short-run checkpoint weights).
 
 Source files are grouped by algorithm. The existing training script, network
 helpers, and notebook live together:
