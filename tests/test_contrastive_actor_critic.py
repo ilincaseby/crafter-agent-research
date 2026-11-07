@@ -12,11 +12,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import gym
 import numpy as np
 import torch
 
 training = importlib.import_module("src.sebi.contrastive_actor_critic")
 models = importlib.import_module("src.sebi.models")
+experiment = importlib.import_module("src.sebi.experiment")
 
 
 def notebook_namespace():
@@ -51,7 +53,10 @@ def notebook_namespace():
 class ShortEnvironment:
     def __init__(self, seed, size):
         self.size = size
-        self.action_space = type("ActionSpace", (), {"n": 17})()
+        self.observation_space = gym.spaces.Box(
+            0, 255, (*size[::-1], 3), dtype=np.uint8
+        )
+        self.action_space = gym.spaces.Discrete(17)
         self.closed = False
 
     def reset(self):
@@ -77,7 +82,199 @@ class ShortEnvironment:
         self.closed = True
 
 
+class ScriptedEnvironment:
+    """Legacy Crafter-style env whose frames encode the episode step."""
+
+    def __init__(self, length):
+        self.length = length
+        self.observation_space = gym.spaces.Box(0, 255, (1, 1, 3), dtype=np.uint8)
+        self.action_space = gym.spaces.Discrete(17)
+
+    def reset(self):
+        self.steps = 0
+        return self.observation()
+
+    def observation(self):
+        return np.full((1, 1, 3), self.steps + 1, dtype=np.uint8)
+
+    def step(self, action):
+        self.steps += 1
+        achievements = {key: 0 for key in training.achievement_list}
+        achievements["collect_wood"] = int(self.steps >= 2)
+        done = self.steps == self.length
+        info = {"achievements": achievements, "discount": 0.0 if done else 1.0}
+        return self.observation(), 1.0, done, info
+
+
+class LastFrameModel(torch.nn.Module):
+    def forward(self, observations):
+        count = observations.shape[0]
+        latent = observations[:, -1, 0, 0, 0, None].expand(count, 4) * 255
+        return torch.zeros(count, 17), torch.zeros(count, 1), latent
+
+
 class ContrastiveActorCriticTests(unittest.TestCase):
+    def test_vector_collector_builds_windows_and_carries_unfinished_episodes(self):
+        env = gym.vector.SyncVectorEnv(
+            [
+                lambda: training.CrafterGymEnv(ScriptedEnvironment(2)),
+                lambda: training.CrafterGymEnv(ScriptedEnvironment(5)),
+            ]
+        )
+        with patch.multiple(training, seq_length=3, height=1, width=1):
+            collector = training.ExperienceCollector(
+                env, training.get_achievement_dict(), torch.device("cpu")
+            )
+            episodes, steps = collector.collect(LastFrameModel(), 3, 100)
+            self.assertEqual((steps, collector.total_steps), (10, 10))
+            self.assertEqual([len(episode[2]) for episode in episodes], [2, 2, 5])
+            obs, f_obs, actions, rewards, ach, latent, f_latent, done = episodes[2]
+            self.assertEqual(obs.dtype, torch.uint8)
+            self.assertEqual(tuple(obs.shape), (5, 3, 3, 1, 1))
+            self.assertEqual(obs[:, :, 0, 0, 0].tolist()[:2], [[0, 0, 1], [0, 1, 2]])
+            self.assertEqual(f_obs[:, -1, 0, 0, 0].tolist(), [2, 3, 4, 5, 6])
+            self.assertTrue(torch.equal(obs[1:], f_obs[:-1]))
+            self.assertEqual(latent[:, 0].tolist(), [1, 2, 3, 4, 5])
+            self.assertEqual(f_latent[:, 0].tolist(), [2, 3, 4, 5, 6])
+            self.assertEqual(done.tolist(), [0, 0, 0, 0, 1])
+            self.assertEqual(rewards.tolist(), [1] * 5)
+            self.assertEqual(actions.dtype, torch.long)
+            wood = training.get_achievement_dict()["collect_wood"]
+            self.assertEqual(ach[:, wood].tolist(), [0, 1, 0, 0, 0])
+            self.assertEqual(ach.sum().item(), 1)
+            # env 0 started a third episode in the previous call; it resumes.
+            episodes, steps = collector.collect(LastFrameModel(), 1, 100)
+            self.assertEqual((steps, collector.total_steps), (2, 12))
+            self.assertEqual(len(episodes), 1)
+            self.assertEqual(
+                episodes[0][0][:, :, 0, 0, 0].tolist(), [[0, 0, 1], [0, 1, 2]]
+            )
+            budget, steps = collector.collect(LastFrameModel(), 5, 1)
+            self.assertEqual((budget, steps), ([], 2))
+        env.close()
+
+    def test_crafter_adapter_splits_death_and_time_limit(self):
+        class Legacy(ScriptedEnvironment):
+            def step(self, action):
+                observation, reward, _, info = super().step(action)
+                info["discount"] = discount
+                return observation, reward, True, info
+
+        for discount, expected in ((0.0, (True, False)), (1.0, (False, True))):
+            env = training.CrafterGymEnv(Legacy(3))
+            observation, info = env.reset(seed=1)
+            self.assertEqual((observation.shape, info), ((1, 1, 3), {}))
+            self.assertEqual(tuple(env.step(np.int64(3))[2:4]), expected)
+
+    def test_standby_instance_prepares_the_next_world_in_background(self):
+        class Tagged(ScriptedEnvironment):
+            def __init__(self, tag):
+                super().__init__(2)
+                self.tag, self.resets = tag, 0
+
+            def reset(self):
+                self.resets += 1
+                return super().reset() + self.tag
+
+        first, second = Tagged(0), Tagged(100)
+        env = training.CrafterGymEnv(first, second)
+        observations = [env.reset()[0][0, 0, 0]]
+        for _ in range(3):
+            env.step(0)
+            env.step(0)
+            observations.append(env.reset()[0][0, 0, 0])
+        env.close()
+        self.assertEqual(observations, [1, 101, 1, 101])
+        self.assertEqual((first.resets, second.resets), (3, 2))
+
+    def test_experiment_evaluates_trains_and_reports_every_seed(self):
+        configuration = {
+            "height": 16,
+            "width": 16,
+            "channels_hidden_1": 2,
+            "channels_hidden_2": 2,
+            "channels_hidden_3": 2,
+            "channels_hidden_4": 2,
+            "hidden_size_cnn": 4,
+            "num_layers_lstm": 1,
+            "hidden_size_lstm": 4,
+            "hidden_size_input": 4,
+            "seq_length": 2,
+            "num_exp": 2,
+            "num_envs": 2,
+            "vector_env": "sync",
+            "total_timesteps": 4,
+            "warm_up_steps": 0,
+            "prob_contrastive": 0.0,
+            "game_batch": 2,
+        }
+        achievements = {key: 0 for key in training.achievement_list}
+        reference = {
+            "experiment": {"eval_episodes": 3},
+            "per_seed": {
+                "1": {
+                    "ppo": {
+                        "episodes": 3,
+                        "mean_return": 5.0,
+                        "crafter_score": 2.0,
+                        "achievement_success_percent": achievements,
+                    }
+                },
+                "2": {"ppo": None},
+            },
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.multiple(training, **configuration),
+            patch.object(training, "get_device", return_value=torch.device("cpu")),
+            patch.object(training.crafter, "Env", side_effect=ShortEnvironment),
+            patch.object(
+                importlib.import_module("src.sebi.evaluate").crafter,
+                "Env",
+                side_effect=ShortEnvironment,
+            ),
+        ):
+            reference_path = Path(directory) / "ppo_summary.json"
+            reference_path.write_text(json.dumps(reference))
+            output = Path(directory) / "run"
+            experiment.run_experiment(
+                output,
+                seeds=[1, 2],
+                eval_episodes=3,
+                eval_envs=2,
+                reference=reference_path,
+            )
+            summary = json.loads((output / "summary.json").read_text())
+            self.assertEqual(summary["status"], "completed")
+            self.assertEqual(summary["paired_seeds"], 2)
+            self.assertEqual(summary["paired_mean_return_difference"], 0.0)
+            for policy in ("cac", "random"):
+                aggregate = summary["aggregate"][policy]
+                self.assertEqual((aggregate["seeds"], aggregate["mean_return"]), (2, 2))
+            self.assertEqual(summary["reference_ppo"]["mean_return"], 5.0)
+            seed = summary["per_seed"]["2"]
+            self.assertEqual(seed["training_steps"], 4)
+            self.assertEqual(seed["training_episodes"], 2)
+            self.assertEqual(
+                seed["random"]["achievement_success_percent"]["collect_wood"], 100
+            )
+            rows = (output / "seed_2/eval_cac/episodes.csv").read_text().splitlines()
+            self.assertEqual(len(rows), 4)
+            self.assertIn("1000000003", rows[1])
+            training_log = (output / "seed_1/cac/episodes.csv").read_text().splitlines()
+            self.assertEqual(
+                training_log[0],
+                "global_step,episodic_return,episodic_length,achievements",
+            )
+            self.assertTrue(training_log[1].startswith("4,2.0,2,"))
+            report = (output / "report.html").read_text()
+            self.assertIn("PPO (reference run)", report)
+            self.assertEqual(report.count("data:image/png;base64"), 3)
+            checkpoint = torch.load(
+                output / "seed_1/cac/checkpoint.pt", weights_only=True
+            )
+            self.assertEqual(checkpoint["config"]["seq_length"], 2)
+
     def test_import_does_not_start_training(self):
         result = subprocess.run(
             [
@@ -401,7 +598,9 @@ class ContrastiveActorCriticTests(unittest.TestCase):
             "hidden_size_input": 4,
             "seq_length": 2,
             "num_exp": 2,
-            "iterations": 1,
+            "num_envs": 2,
+            "vector_env": "sync",
+            "total_timesteps": 4,
             "warm_up_steps": 0,
             "contrastive_loss_batch_size": 1,
             "game_batch": 2,
@@ -474,6 +673,9 @@ class ContrastiveActorCriticTests(unittest.TestCase):
                     weights_only=True,
                 )
                 self.assertEqual(checkpoint["iteration"], 1)
+                self.assertEqual(checkpoint["timesteps"], 4)
+                self.assertEqual(records[0]["timesteps"], 4)
+                self.assertEqual(records[0]["episodes"], 2)
                 self.assertTrue(checkpoint["model"])
                 self.assertTrue(environments[0].closed)
 

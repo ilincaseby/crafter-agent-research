@@ -1,12 +1,17 @@
 import crafter
+import gym
 import torch
 import random
 import torch.nn.functional as F
 import numpy as np
 import os
+import sys
+import csv
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from functools import partial
 from pathlib import Path
 from time import monotonic
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -42,6 +47,10 @@ hidden_size_lstm = int(os.getenv("HIDDEN_SIZE_LSTM", 1024))
 hidden_size_input = int(os.getenv("HIDDEN_SIZE_INPUT", hidden_size_lstm))
 num_actions = int(os.getenv("NUM_ACTIONS", 17))
 actor_critic_lr = float(os.getenv("ACTOR_CRITIC_LR", 0.0003))
+# "adam" or "rmsprop"; RMSprop's zero-initialized square average makes its
+# first updates ~10x the learning rate, which can collapse the policy at once.
+actor_critic_optimizer = os.getenv("ACTOR_CRITIC_OPTIMIZER", "adam").strip().lower()
+# RMSprop-only settings
 centered = os.getenv("CENTERED", "false").strip().lower() in ("true", "1", "yes", "on")
 alpha = float(os.getenv("ALPHA", 0.99))
 eps_optim = float(os.getenv("EPS_OPTIM", 1e-8))
@@ -57,14 +66,21 @@ discount_greediness = float(os.getenv("DISCOUNT_GREEDINESS", 0.9978))
 # steps_updating = 2000
 steps_updating = int(os.getenv("STEPS_UPDATING", 1))
 
-# experiences every iteration
+# completed episodes collected every iteration
 num_exp = int(os.getenv("NUM_EXP", 16))
 
-# total iterations
-iterations = int(os.getenv("ITERATIONS", 5000))
+# parallel Crafter environments; VECTOR_ENV is "async" (subprocesses) or "sync"
+num_envs = int(os.getenv("NUM_ENVS", num_exp))
+vector_env = os.getenv("VECTOR_ENV", "async").strip().lower()
+# multiprocessing start method for AsyncVectorEnv; empty uses the platform default
+vector_env_context = os.getenv("VECTOR_ENV_CONTEXT", "") or None
+
+# total environment timesteps (Crafter's standard 1M-step budget)
+total_timesteps = int(os.getenv("TOTAL_TIMESTEPS", 1_000_000))
 
 # contrastive loss arguments
-warm_up_steps = int(os.getenv("WARM_UP_STEPS", 512))
+# environment timesteps collected before contrastive updates may start
+warm_up_steps = int(os.getenv("WARM_UP_STEPS", 100_000))
 prob_contrastive = float(os.getenv("PROB_CONTRASTIVE", 0.2))
 contrastive_loss_batch_size = int(os.getenv("CONTRASTIVE_LOSS_BATCH_SIZE", 64))
 contrastive_loss_temperature = float(os.getenv("CONTRASTIVE_LOSS_TEMPERATURE", 1.1))
@@ -119,23 +135,73 @@ def set_seed(seed=42):
         torch.backends.cudnn.benchmark = False
 
 
-def take_action(model, state, num_actions):
-    logits, value, last_lstm_out, lstm_out, h_n, c_n = model(state)
-    dist = torch.distributions.Categorical(logits=logits[0])
-    action = dist.sample()
-    return action.item()
+# Seed offset of each worker's standby Crafter instance.
+STANDBY_SEED_OFFSET = 10_000
+# World generation is pure Python; with the default 5 ms GIL switch interval
+# it delays the worker's steps, and the slowest worker gates every vector step.
+WORKER_SWITCH_INTERVAL = 2e-5
 
 
-def create_env(seed=42, log_dir=None):
-    env = crafter.Env(seed=seed, size=(width, height))
-    env = crafter.Recorder(
-        env,
-        str(log_dir or Path(__file__).resolve().parents[2] / "logs" / "sebi"),
-        save_stats=True,
-        save_video=False,
-        save_episode=False,
+class CrafterGymEnv(gym.Env):
+    """Adapts Crafter's legacy reset/step API to the one gym.vector expects.
+
+    Crafter generates a new world on every reset, which takes about a second,
+    while a step takes about a millisecond. With a standby instance, the next
+    world is generated in a background thread while the current episode runs,
+    so automatic resets do not stall every environment in the vector.
+    Episodes alternate deterministically between the two instances.
+    """
+
+    metadata = {"render_modes": []}
+
+    def __init__(self, env, standby=None):
+        self.env = env
+        self.standby = standby
+        self.observation_space = env.observation_space
+        self.action_space = env.action_space
+        self._executor = None
+        self._pending = None
+        if standby is not None:
+            sys.setswitchinterval(WORKER_SWITCH_INTERVAL)
+            self._executor = ThreadPoolExecutor(1)
+
+    def reset(self, *, seed=None, options=None):
+        # Crafter is seeded at construction and reseeds every episode itself.
+        if self._pending is None:
+            observation = self.env.reset()
+        else:
+            self.env, self.standby = self.standby, self.env
+            observation = self._pending.result()
+        if self._executor is not None:
+            self._pending = self._executor.submit(self.standby.reset)
+        return observation, {}
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(int(action))
+        terminated = bool(done) and info.get("discount", 0.0) == 0
+        return observation, reward, terminated, bool(done) and not terminated, info
+
+    def close(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+        for env in (self.env, self.standby):
+            close = getattr(env, "close", None)
+            if close is not None:
+                close()
+
+
+def make_env(seed):
+    return CrafterGymEnv(
+        crafter.Env(seed=seed, size=(width, height)),
+        crafter.Env(seed=seed + STANDBY_SEED_OFFSET, size=(width, height)),
     )
-    return env
+
+
+def create_vector_env(seed):
+    env_fns = [partial(make_env, seed + index) for index in range(num_envs)]
+    if vector_env == "sync":
+        return gym.vector.SyncVectorEnv(env_fns)
+    return gym.vector.AsyncVectorEnv(env_fns, context=vector_env_context)
 
 
 def get_achievement_dict():
@@ -145,83 +211,224 @@ def get_achievement_dict():
     return achievement_dict
 
 
-def play_and_store(
-    model, env, seq_length, c, h, w, hidden_size, achievement_dict, device, num_actions
-):
-    with torch.no_grad():
-        er_buffer_obs = torch.empty(0, seq_length, c, h, w).to(device)
-        er_buffer_f_obs = torch.empty(0, seq_length, c, h, w).to(device)
-        er_buffer_actions = torch.empty(0).to(device)
-        er_buffer_reward = torch.empty(0).to(device)
-        er_buffer_achievement = torch.empty(0, len(achievement_dict)).to(device)
-        er_buffer_latent_space_obs = torch.empty(0, hidden_size).to(device)
-        er_buffer_latent_space_f_obs = torch.empty(0, hidden_size).to(device)
-        obs = env.reset()
-        obs = torch.as_tensor(obs, dtype=torch.float32, device=device)
-        obs = obs.permute(2, 0, 1) / 255.0
-        tensor_obs = torch.empty(0, c, h, w).to(device)
-        for i in range(seq_length + 1):
-            obs_zero = torch.zeros(1, c, h, w).to(device)
-            tensor_obs = torch.cat([tensor_obs, obs_zero], dim=0)
-        tensor_obs = torch.cat([tensor_obs, obs.unsqueeze(0)], dim=0)
-        done = False
-        past_info = {k: 0 for k, _ in achievement_dict.items()}
-        while done is not True:
-            action = take_action(
-                model, tensor_obs[-seq_length:, :, :, :].unsqueeze(0), num_actions
+def as_model_input(observations):
+    if observations.dtype == torch.uint8:
+        return observations.float().div_(255.0)
+    return observations
+
+
+class ExperienceCollector:
+    """Plays a vector of Crafter environments and returns completed episodes.
+
+    Unfinished episodes are carried over to the next collection, so no
+    environment steps are wasted and long episodes are not under-sampled.
+    """
+
+    def __init__(self, env, achievement_dict, device):
+        self.env = env
+        self.num_envs = env.num_envs
+        self.achievement_dict = achievement_dict
+        self.device = device
+        self.total_steps = 0
+        # Per-episode training statistics, drained by the training loop.
+        self.finished = []
+        self.windows = torch.zeros(
+            self.num_envs,
+            seq_length,
+            channels_in,
+            height,
+            width,
+            dtype=torch.uint8,
+            device=device,
+        )
+        self.episodes = [None] * self.num_envs
+        observations, _ = env.reset()
+        for index in range(self.num_envs):
+            self._start_episode(index, observations[index])
+
+    def _frames_to_tensor(self, frames):
+        frames = torch.as_tensor(np.asarray(frames), device=self.device)
+        return frames.permute(0, 3, 1, 2)
+
+    def _start_episode(self, index, observation):
+        self.windows[index].zero_()
+        self.windows[index, -1] = self._frames_to_tensor(observation[None])[0]
+        self.episodes[index] = {
+            "frames": [np.array(observation, dtype=np.uint8, copy=True)],
+            "actions": [],
+            "rewards": [],
+            "achievements": [],
+            "latents": [],
+            "unlocked": set(),
+        }
+
+    def _new_achievements(self, episode, achievements):
+        unlocked = np.zeros(len(self.achievement_dict), dtype=np.float32)
+        for name, count in achievements.items():
+            if count > 0 and name not in episode["unlocked"]:
+                unlocked[self.achievement_dict[name]] = 1.0
+                episode["unlocked"].add(name)
+        return unlocked
+
+    def _finish_episode(self, episode, final_latent):
+        device = self.device
+        frames = self._frames_to_tensor(episode["frames"])
+        padding = torch.zeros(
+            seq_length - 1, *frames.shape[1:], dtype=torch.uint8, device=device
+        )
+        # Zero-copy sliding windows: windows[t] holds frames t-seq_length+1..t.
+        windows = (
+            torch.cat([padding, frames]).unfold(0, seq_length, 1).permute(0, 4, 1, 2, 3)
+        )
+        steps = len(episode["actions"])
+        latent_obs = torch.stack(episode["latents"])
+        done = torch.zeros(steps, device=device)
+        done[-1] = 1.0
+        return (
+            windows[:-1],
+            windows[1:],
+            torch.tensor(episode["actions"], dtype=torch.long, device=device),
+            torch.tensor(episode["rewards"], dtype=torch.float32, device=device),
+            torch.as_tensor(np.stack(episode["achievements"]), device=device),
+            latent_obs,
+            torch.cat([latent_obs[1:], final_latent[None]]),
+            done,
+        )
+
+    @torch.no_grad()
+    def collect(self, model, num_episodes, max_steps):
+        completed = []
+        steps = 0
+        while len(completed) < num_episodes and steps < max_steps:
+            logits, _, latents, *_ = model(as_model_input(self.windows))
+            actions = torch.distributions.Categorical(logits=logits).sample()
+            actions_np = actions.cpu().numpy()
+            observations, rewards, terminated, truncated, infos = self.env.step(
+                actions_np
             )
-            obs, reward, done, info = env.step(action)
-            obs = torch.as_tensor(obs, dtype=torch.float32, device=device)
-            obs = obs.permute(2, 0, 1) / 255.0
-            tensor_obs = torch.cat([tensor_obs, obs.unsqueeze(0)], dim=0)
-            er_buffer_obs = torch.cat(
-                [
-                    er_buffer_obs,
-                    tensor_obs[-(seq_length + 1) : -1, :, :, :].unsqueeze(0),
-                ],
-                dim=0,
+            steps += self.num_envs
+            dones = np.logical_or(terminated, truncated)
+            next_frames = np.array(observations, dtype=np.uint8, copy=True)
+            done_indices = np.flatnonzero(dones)
+            for index in done_indices:
+                next_frames[index] = infos["final_observation"][index]
+            self.windows = torch.cat(
+                [self.windows[:, 1:], self._frames_to_tensor(next_frames)[:, None]],
+                dim=1,
             )
-            er_buffer_f_obs = torch.cat(
-                [er_buffer_f_obs, tensor_obs[-seq_length:, :, :, :].unsqueeze(0)], dim=0
-            )
-            er_buffer_actions = torch.cat(
-                [er_buffer_actions, torch.tensor([action], device=device)], dim=0
-            )
-            er_buffer_reward = torch.cat(
-                [er_buffer_reward, torch.tensor([reward]).to(device)], dim=0
-            )
-            achievement_tensor = torch.zeros(len(achievement_dict)).to(device)
-            for ach, obtained in info["achievements"].items():
-                if obtained > 0 and past_info[ach] == 0:
-                    achievement_tensor[achievement_dict[ach]] = 1.0
-                    past_info[ach] = 1.0
-            er_buffer_achievement = torch.cat(
-                [er_buffer_achievement, achievement_tensor.unsqueeze(0)], dim=0
-            )
-            _, _, last_lstm_output_obs, _, _, _ = model(
-                tensor_obs[-(seq_length + 1) : -1, :, :, :].unsqueeze(0)
-            )
-            _, _, last_lstm_output_f_obs, _, _, _ = model(
-                tensor_obs[-seq_length:, :, :, :].unsqueeze(0)
-            )
-            er_buffer_latent_space_obs = torch.cat(
-                [er_buffer_latent_space_obs, last_lstm_output_obs], dim=0
-            )
-            er_buffer_latent_space_f_obs = torch.cat(
-                [er_buffer_latent_space_f_obs, last_lstm_output_f_obs], dim=0
-            )
-    er_buffer_done = torch.zeros(er_buffer_reward.shape[0]).to(device)
-    er_buffer_done[-1] = 1.0
-    return (
-        er_buffer_obs,
-        er_buffer_f_obs,
-        er_buffer_actions.long(),
-        er_buffer_reward,
-        er_buffer_achievement,
-        er_buffer_latent_space_obs,
-        er_buffer_latent_space_f_obs,
-        er_buffer_done,
-    )
+            final_latents = {}
+            if done_indices.size:
+                selected = torch.as_tensor(done_indices, device=self.device)
+                _, _, done_latents, *_ = model(as_model_input(self.windows[selected]))
+                final_latents = dict(zip(done_indices.tolist(), done_latents))
+            for index in range(self.num_envs):
+                episode = self.episodes[index]
+                if dones[index]:
+                    achievements = infos["final_info"][index]["achievements"]
+                else:
+                    achievements = infos["achievements"][index]
+                episode["actions"].append(int(actions_np[index]))
+                episode["rewards"].append(float(rewards[index]))
+                episode["achievements"].append(
+                    self._new_achievements(episode, achievements)
+                )
+                episode["latents"].append(latents[index].clone())
+                episode["frames"].append(next_frames[index].copy())
+                if dones[index]:
+                    completed.append(
+                        self._finish_episode(episode, final_latents[index])
+                    )
+                    self.finished.append(
+                        {
+                            "global_step": self.total_steps + steps,
+                            "episodic_return": float(sum(episode["rewards"])),
+                            "episodic_length": len(episode["actions"]),
+                            "achievements": json.dumps(
+                                {
+                                    name: int(count)
+                                    for name, count in achievements.items()
+                                }
+                            ),
+                        }
+                    )
+                    self._start_episode(index, observations[index])
+        self.total_steps += steps
+        return completed, steps
+
+
+def config_snapshot():
+    """Hyperparameters of this run, stored with checkpoints and reports."""
+    return {
+        "height": height,
+        "width": width,
+        "channels_in": channels_in,
+        "channels_hidden": [
+            channels_hidden_1,
+            channels_hidden_2,
+            channels_hidden_3,
+            channels_hidden_4,
+        ],
+        "hidden_size_cnn": hidden_size_cnn,
+        "kernel_size": kernel_size,
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "groups": groups,
+        "num_layers_lstm": num_layers_lstm,
+        "hidden_size_lstm": hidden_size_lstm,
+        "num_actions": num_actions,
+        "seq_length": seq_length,
+        "total_timesteps": total_timesteps,
+        "num_exp": num_exp,
+        "num_envs": num_envs,
+        "vector_env": vector_env,
+        "actor_critic_optimizer": actor_critic_optimizer,
+        "actor_critic_lr": actor_critic_lr,
+        "centered": centered,
+        "alpha": alpha,
+        "eps_optim": eps_optim,
+        "game_batch": game_batch,
+        "actor_loss_weight": actor_loss_weight,
+        "critic_loss_weight": critic_loss_weight,
+        "entropy_loss_weight": entropy_loss_weight,
+        "discount": discount,
+        "warm_up_steps": warm_up_steps,
+        "prob_contrastive": prob_contrastive,
+        "contrastive_loss_batch_size": contrastive_loss_batch_size,
+        "contrastive_loss_temperature": contrastive_loss_temperature,
+        "lr_contrastive_learning": lr_contrastive_learning,
+        "weight_decay": weight_decay,
+        "contrastive_sim_weight": contrastive_sim_weight,
+        "contrastive_near_loss_weight": contrastive_near_loss_weight,
+    }
+
+
+def build_model(config, device):
+    c1, c2, c3, c4 = config["channels_hidden"]
+    lstm_model = LatentStateEncoder(
+        config["height"],
+        config["width"],
+        config["channels_in"],
+        config["num_layers_lstm"],
+        config["hidden_size_lstm"],
+        c1,
+        c2,
+        c3,
+        c4,
+        config["hidden_size_cnn"],
+        config["kernel_size"],
+        config["stride"],
+        config["padding"],
+        config["dilation"],
+        config["groups"],
+    ).to(device)
+    model = ActorCritic(
+        lstm_model,
+        config["num_layers_lstm"],
+        config["hidden_size_lstm"],
+        config["num_actions"],
+    ).to(device)
+    return model, lstm_model
 
 
 def get_device():
@@ -235,24 +442,10 @@ def get_device():
     return device
 
 
-def create_experiences(model, env, achievement_dict, device):
-    buffers = [[] for _ in range(8)]
-    for _ in range(num_exp):
-        episode = play_and_store(
-            model,
-            env,
-            seq_length,
-            channels_in,
-            height,
-            width,
-            hidden_size_lstm,
-            achievement_dict,
-            device,
-            num_actions,
-        )
-        for buffer, tensor in zip(buffers, episode):
-            buffer.append(tensor)
-    return buffers
+def create_experiences(model, collector, max_steps):
+    episodes, steps = collector.collect(model, num_exp, max_steps)
+    buffers = [list(tensors) for tensors in zip(*episodes)] or [[] for _ in range(8)]
+    return buffers, steps
 
 
 def actor_loss(log_probs, advantages):
@@ -294,8 +487,9 @@ def near_loss(ach_tensor, old_ach_tensor):
 
 def train_contrastive(lstm_model, clone_lstm, optimizer, buffers, achievement_dict):
     losses = []
-    for start in range(0, num_exp, contrastive_loss_batch_size):
-        stop = min(start + contrastive_loss_batch_size, num_exp)
+    games = len(buffers[0])
+    for start in range(0, games, contrastive_loss_batch_size):
+        stop = min(start + contrastive_loss_batch_size, games)
         ach_tensor, old_ach_tensor = {}, {}
         before_update = deepcopy(lstm_model.state_dict())
         optimizer.zero_grad(set_to_none=True)
@@ -309,7 +503,7 @@ def train_contrastive(lstm_model, clone_lstm, optimizer, buffers, achievement_di
                     examples.append(buffers[0][game][indices])
             if not examples:
                 continue
-            observations = torch.cat(examples)
+            observations = as_model_input(torch.cat(examples))
             output, _ = lstm_model(observations)
             ach_tensor[key] = output[:, -1, :]
             with torch.no_grad():
@@ -347,16 +541,16 @@ def train_actor_critic(model, optimizer, buffers):
         "reward_abs_mean": 0.0,
     }
     transition_count = 0
-    for game in range(num_exp):
+    for game in range(len(buffers[0])):
         length = buffers[0][game].shape[0]
         indices = torch.randperm(length, device=buffers[0][game].device)
         for start in range(0, length, game_batch):
             batch = indices[start : start + game_batch]
             optimizer.zero_grad(set_to_none=True)
-            logits, value, *_ = model(buffers[0][game][batch])
+            logits, value, *_ = model(as_model_input(buffers[0][game][batch]))
             value = value.squeeze(-1)
             with torch.no_grad():
-                _, next_value, *_ = model(buffers[1][game][batch])
+                _, next_value, *_ = model(as_model_input(buffers[1][game][batch]))
                 target = buffers[3][game][batch] + discount * (
                     1 - buffers[7][game][batch]
                 ) * next_value.squeeze(-1)
@@ -430,10 +624,12 @@ def save_plots(output_dir):
 
 
 def save_checkpoint(
-    path, model, clone_lstm, optimizer, contrastive_optimizer, iteration
+    path, model, clone_lstm, optimizer, contrastive_optimizer, iteration, timesteps
 ):
     checkpoint = {
         "iteration": iteration,
+        "timesteps": timesteps,
+        "config": config_snapshot(),
         "model": model.state_dict(),
         "previous_encoder": clone_lstm.state_dict(),
         "actor_critic_optimizer": optimizer.state_dict(),
@@ -453,36 +649,73 @@ def train_model(
     device,
     output_dir,
     checkpoint_every,
+    on_checkpoint=None,
 ):
-    optimizer = torch.optim.RMSprop(
-        model.parameters(),
-        lr=actor_critic_lr,
-        centered=centered,
-        alpha=alpha,
-        eps=eps_optim,
-    )
+    if actor_critic_optimizer == "rmsprop":
+        optimizer = torch.optim.RMSprop(
+            model.parameters(),
+            lr=actor_critic_lr,
+            centered=centered,
+            alpha=alpha,
+            eps=eps_optim,
+        )
+    else:
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=actor_critic_lr, eps=eps_optim
+        )
     contrastive_optimizer = torch.optim.AdamW(
         lstm_model.parameters(),
         lr=lr_contrastive_learning,
         weight_decay=weight_decay,
         eps=eps_optim,
     )
-    with (output_dir / "metrics.jsonl").open("a", encoding="utf-8") as metrics_file:
-        for iteration in range(iterations):
+    collector = ExperienceCollector(env, achievement_dict, device)
+    iteration = 0
+    episodes_path = output_dir / "episodes.csv"
+    new_log = not episodes_path.exists()
+    with (
+        (output_dir / "metrics.jsonl").open("a", encoding="utf-8") as metrics_file,
+        episodes_path.open("a", newline="", encoding="utf-8") as episodes_file,
+    ):
+        episode_log = csv.DictWriter(
+            episodes_file,
+            ["global_step", "episodic_return", "episodic_length", "achievements"],
+        )
+        if new_log:
+            episode_log.writeheader()
+        while collector.total_steps < total_timesteps:
             started = monotonic()
-            buffers = create_experiences(model, env, achievement_dict, device)
+            buffers, steps = create_experiences(
+                model, collector, total_timesteps - collector.total_steps
+            )
+            episode_log.writerows(collector.finished)
+            episodes_file.flush()
+            collector.finished.clear()
+            episodes = len(buffers[0])
+            if episodes == 0:
+                logger.info(
+                    "Timestep budget reached with %s steps in unfinished episodes",
+                    steps,
+                )
+                break
+            iteration += 1
             metrics = {
-                "iteration": iteration + 1,
+                "iteration": iteration,
+                "timesteps": collector.total_steps,
+                "episodes": episodes,
                 "average_reward": sum(rewards.sum().item() for rewards in buffers[3])
-                / num_exp,
+                / episodes,
                 "average_steps": sum(rewards.numel() for rewards in buffers[3])
-                / num_exp,
+                / episodes,
                 "achievements": {
                     key: sum(ach[:, index].sum().item() for ach in buffers[4])
                     for key, index in achievement_dict.items()
                 },
             }
-            if iteration >= warm_up_steps and random.random() < prob_contrastive:
+            if (
+                collector.total_steps >= warm_up_steps
+                and random.random() < prob_contrastive
+            ):
                 losses = train_contrastive(
                     lstm_model,
                     clone_lstm,
@@ -500,33 +733,47 @@ def train_model(
                 metrics.update(train_actor_critic(model, optimizer, buffers))
             del buffers
             metrics["seconds"] = monotonic() - started
+            metrics["steps"] = steps
+            metrics["sps"] = steps / metrics["seconds"]
             record = json.dumps(metrics, allow_nan=False)
             metrics_file.write(record + "\n")
             metrics_file.flush()
             logger.info("%s", record)
-            if (iteration + 1) % checkpoint_every == 0 or iteration + 1 == iterations:
+            if (
+                iteration % checkpoint_every == 0
+                and collector.total_steps < total_timesteps
+            ):
                 save_checkpoint(
                     output_dir / "checkpoint.pt",
                     model,
                     clone_lstm,
                     optimizer,
                     contrastive_optimizer,
-                    iteration + 1,
+                    iteration,
+                    collector.total_steps,
                 )
-                if iteration + 1 < iterations:
-                    save_plots(output_dir)
-    save_plots(output_dir)
-
-
-def main():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+                save_plots(output_dir)
+                if on_checkpoint is not None:
+                    on_checkpoint()
+    save_checkpoint(
+        output_dir / "checkpoint.pt",
+        model,
+        clone_lstm,
+        optimizer,
+        contrastive_optimizer,
+        iteration,
+        collector.total_steps,
     )
-    checkpoint_every = int(os.getenv("CHECKPOINT_EVERY", 10))
-    seed = int(os.getenv("SEED", 42))
+    if iteration:
+        save_plots(output_dir)
+    return output_dir / "checkpoint.pt"
+
+
+def validate_config(checkpoint_every):
     for name, value in {
-        "ITERATIONS": iterations,
+        "TOTAL_TIMESTEPS": total_timesteps,
         "NUM_EXP": num_exp,
+        "NUM_ENVS": num_envs,
         "GAME_BATCH": game_batch,
         "SEQ_LENGTH": seq_length,
         "CONTRASTIVE_LOSS_BATCH_SIZE": contrastive_loss_batch_size,
@@ -534,6 +781,10 @@ def main():
     }.items():
         if value < 1:
             raise ValueError(f"{name} must be positive")
+    if vector_env not in ("async", "sync"):
+        raise ValueError("VECTOR_ENV must be 'async' or 'sync'")
+    if actor_critic_optimizer not in ("adam", "rmsprop"):
+        raise ValueError("ACTOR_CRITIC_OPTIMIZER must be 'adam' or 'rmsprop'")
     if not 0 <= prob_contrastive <= 1 or not 0 <= discount <= 1:
         raise ValueError("PROB_CONTRASTIVE and DISCOUNT must be between 0 and 1")
     if warm_up_steps < 0 or contrastive_loss_temperature <= 0:
@@ -542,46 +793,31 @@ def main():
         raise ValueError(
             "Crafter requires CHANNELS_IN=3 and HIDDEN_SIZE_INPUT=HIDDEN_SIZE_LSTM"
         )
-    output_dir = (
-        Path(
-            os.getenv(
-                "OUTPUT_DIR",
-                str(Path(__file__).resolve().parents[2] / "logs" / "sebi"),
-            )
-        )
-        .expanduser()
-        .resolve()
-    )
+
+
+def run(seed, output_dir, checkpoint_every=10, device=None, on_checkpoint=None):
+    """Train one seed and return the path of its final checkpoint."""
+    validate_config(checkpoint_every)
+    output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     set_seed(seed)
-    device = get_device()
-    logger.info("Training on %s; output directory: %s", device, output_dir)
-    lstm_model = LatentStateEncoder(
-        height,
-        width,
-        channels_in,
-        num_layers_lstm,
-        hidden_size_lstm,
-        channels_hidden_1,
-        channels_hidden_2,
-        channels_hidden_3,
-        channels_hidden_4,
-        hidden_size_cnn,
-        kernel_size,
-        stride,
-        padding,
-        dilation,
-        groups,
-    ).to(device)
-    model = ActorCritic(lstm_model, num_layers_lstm, hidden_size_input, num_actions).to(
-        device
+    device = device or get_device()
+    logger.info(
+        "Training on %s with %s %s environments for %s timesteps; output: %s",
+        device,
+        num_envs,
+        vector_env,
+        total_timesteps,
+        output_dir,
     )
-    clone_lstm = deepcopy(lstm_model).requires_grad_(False)
-    env = create_env(seed, output_dir / "episodes")
+    # Start environment workers before CUDA initializes so forking is safe.
+    env = create_vector_env(seed)
     try:
-        if env.action_space.n != num_actions:
+        if env.single_action_space.n != num_actions:
             raise ValueError("NUM_ACTIONS must match the Crafter action space")
-        train_model(
+        model, lstm_model = build_model(config_snapshot(), device)
+        clone_lstm = deepcopy(lstm_model).requires_grad_(False)
+        return train_model(
             model,
             lstm_model,
             clone_lstm,
@@ -590,9 +826,23 @@ def main():
             device,
             output_dir,
             checkpoint_every,
+            on_checkpoint,
         )
     finally:
         env.close()
+
+
+def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    run(
+        seed=int(os.getenv("SEED", 42)),
+        output_dir=os.getenv(
+            "OUTPUT_DIR", str(Path(__file__).resolve().parents[2] / "logs" / "sebi")
+        ),
+        checkpoint_every=int(os.getenv("CHECKPOINT_EVERY", 10)),
+    )
 
 
 if __name__ == "__main__":
