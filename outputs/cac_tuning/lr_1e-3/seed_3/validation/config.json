@@ -1,0 +1,9 @@
+{
+  "policy": "contrastive_actor_critic",
+  "checkpoint": "/export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/outputs/cac_tuning/lr_1e-3/seed_3/cac/checkpoint.pt",
+  "episodes": 50,
+  "seed_start": 1800000100,
+  "device": "cuda",
+  "action_selection": "sampled categorical",
+  "seq_length": 20
+}

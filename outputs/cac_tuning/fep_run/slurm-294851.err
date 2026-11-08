@@ -1,0 +1,15 @@
+
+[notice] A new release of pip is available: 24.0 -> 26.3
+[notice] To update, run: python -m pip install --upgrade pip
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Traceback (most recent call last):
+  File "/export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/tuning.py", line 523, in <module>
+    validation_episodes=args.validation_episodes,
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/tuning.py", line 251, in run_all
+    write_results(root)
+^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Tasks failed: [8, 14]; see outputs/cac_tuning/logs

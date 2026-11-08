@@ -1,0 +1,38 @@
+{
+  "algorithm": "CAC_TUNED",
+  "created_at": "2026-11-07T17:31:34.800772+00:00",
+  "host": "fep",
+  "run_dir": "/export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNED_20261107T173134_800772Z",
+  "image": "/export/home/acs/stud/r/robert.vulpe/images/qwen25-coder-sft.sif",
+  "working_directory": "/export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNED_20261107T173134_800772Z/project",
+  "entrypoint": "src/sebi/experiment.py",
+  "training_command": [
+    "python",
+    "src/sebi/experiment.py",
+    "--output-dir",
+    "outputs/cac_tuned",
+    "--set",
+    "critic_loss_weight=1.0",
+    "--reference",
+    "PPO=outputs/ppo_comparison/summary.json",
+    "--reference",
+    "Contrastive AC baseline=outputs/cac_comparison/summary.json"
+  ],
+  "requirements": "src/sebi/requirements.txt",
+  "setup_command": [
+    "python",
+    "-m",
+    "pip",
+    "install",
+    "-r",
+    "src/sebi/requirements.txt"
+  ],
+  "slurm": {
+    "account": "student",
+    "partition": "dgxa100",
+    "gpus": 1,
+    "cpus_per_task": 17,
+    "mem": "32G",
+    "time": "12:00:00"
+  }
+}

@@ -1,0 +1,263 @@
+{
+  "created_at": "2026-11-07T16:28:00.714462+00:00",
+  "base_config": {
+    "height": 64,
+    "width": 64,
+    "channels_in": 3,
+    "hidden_size_cnn": 1024,
+    "kernel_size": 4,
+    "stride": 2,
+    "padding": 1,
+    "dilation": 1,
+    "groups": 1,
+    "num_layers_lstm": 2,
+    "hidden_size_lstm": 1024,
+    "num_actions": 17,
+    "seq_length": 20,
+    "total_timesteps": 150000,
+    "num_exp": 16,
+    "num_envs": 16,
+    "vector_env": "async",
+    "actor_critic_optimizer": "adam",
+    "actor_critic_lr": 0.0003,
+    "centered": false,
+    "alpha": 0.99,
+    "eps_optim": 1e-08,
+    "game_batch": 64,
+    "actor_loss_weight": 1.0,
+    "critic_loss_weight": 0.5,
+    "entropy_loss_weight": 0.1,
+    "discount": 0.9985,
+    "warm_up_steps": 100000,
+    "prob_contrastive": 0.2,
+    "contrastive_loss_batch_size": 64,
+    "contrastive_loss_temperature": 1.1,
+    "lr_contrastive_learning": 0.0001,
+    "weight_decay": 0.01,
+    "contrastive_sim_weight": 1.0,
+    "contrastive_near_loss_weight": 0.2
+  },
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "validation_episodes": 50,
+  "validation_seed_start": 1800000000,
+  "candidates": [
+    {
+      "name": "baseline",
+      "changes": {}
+    },
+    {
+      "name": "entropy_0.01",
+      "changes": {
+        "entropy_loss_weight": 0.01
+      }
+    },
+    {
+      "name": "entropy_0.001",
+      "changes": {
+        "entropy_loss_weight": 0.001
+      }
+    },
+    {
+      "name": "lr_1e-4",
+      "changes": {
+        "actor_critic_lr": 0.0001
+      }
+    },
+    {
+      "name": "lr_1e-3",
+      "changes": {
+        "actor_critic_lr": 0.001
+      }
+    },
+    {
+      "name": "discount_0.99",
+      "changes": {
+        "discount": 0.99
+      }
+    },
+    {
+      "name": "critic_weight_1.0",
+      "changes": {
+        "critic_loss_weight": 1.0
+      }
+    },
+    {
+      "name": "game_batch_256",
+      "changes": {
+        "game_batch": 256
+      }
+    },
+    {
+      "name": "seq_length_8",
+      "changes": {
+        "seq_length": 8
+      }
+    },
+    {
+      "name": "warm_up_0",
+      "changes": {
+        "warm_up_steps": 0
+      }
+    }
+  ],
+  "python": "3.11.10",
+  "method": "One hyperparameter changed per candidate versus a common baseline",
+  "ranking": "Equal-weight mean episodic return across seeds on validation maps disjoint from training and from the final held-out maps (1e9+)",
+  "tasks": [
+    {
+      "candidate": "baseline",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "entropy_0.01",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "entropy_0.001",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "lr_1e-4",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "lr_1e-3",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "discount_0.99",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "critic_weight_1.0",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "game_batch_256",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "seq_length_8",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "warm_up_0",
+      "seed": 1,
+      "seed_index": 0
+    },
+    {
+      "candidate": "baseline",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "entropy_0.01",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "entropy_0.001",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "lr_1e-4",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "lr_1e-3",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "discount_0.99",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "critic_weight_1.0",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "game_batch_256",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "seq_length_8",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "warm_up_0",
+      "seed": 2,
+      "seed_index": 1
+    },
+    {
+      "candidate": "baseline",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "entropy_0.01",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "entropy_0.001",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "lr_1e-4",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "lr_1e-3",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "discount_0.99",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "critic_weight_1.0",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "game_batch_256",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "seq_length_8",
+      "seed": 3,
+      "seed_index": 2
+    },
+    {
+      "candidate": "warm_up_0",
+      "seed": 3,
+      "seed_index": 2
+    }
+  ],
+  "sha256": "b11ba55d41d2632bebcca8bf9f003906efb7145b25bf38dd444a22a726188602"
+}

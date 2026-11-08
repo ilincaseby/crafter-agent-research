@@ -1,0 +1,75 @@
+{
+  "status": "completed",
+  "created_at": "2026-11-07T17:32:05.446807+00:00",
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "eval_episodes": 100,
+  "training": {
+    "height": 64,
+    "width": 64,
+    "channels_in": 3,
+    "channels_hidden": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "hidden_size_cnn": 1024,
+    "kernel_size": 4,
+    "stride": 2,
+    "padding": 1,
+    "dilation": 1,
+    "groups": 1,
+    "num_layers_lstm": 2,
+    "hidden_size_lstm": 1024,
+    "num_actions": 17,
+    "seq_length": 20,
+    "total_timesteps": 1000000,
+    "num_exp": 16,
+    "num_envs": 16,
+    "vector_env": "async",
+    "actor_critic_optimizer": "adam",
+    "actor_critic_lr": 0.0003,
+    "centered": false,
+    "alpha": 0.99,
+    "eps_optim": 1e-08,
+    "game_batch": 64,
+    "actor_loss_weight": 1.0,
+    "critic_loss_weight": 1.0,
+    "entropy_loss_weight": 0.1,
+    "discount": 0.9985,
+    "warm_up_steps": 100000,
+    "prob_contrastive": 0.2,
+    "contrastive_loss_batch_size": 64,
+    "contrastive_loss_temperature": 1.1,
+    "lr_contrastive_learning": 0.0001,
+    "weight_decay": 0.01,
+    "contrastive_sim_weight": 1.0,
+    "contrastive_near_loss_weight": 0.2
+  },
+  "overrides": {
+    "critic_loss_weight": 1.0
+  },
+  "python": "3.11.10",
+  "torch": "2.5.1+cu121",
+  "device": "cuda",
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "git_revision": null,
+  "source_of_truth": "FEP project source snapshot; git revision alone excludes uncommitted edits",
+  "references": [
+    {
+      "label": "PPO",
+      "file": "reference_1.json",
+      "source": "outputs/ppo_comparison/summary.json"
+    },
+    {
+      "label": "Contrastive AC baseline",
+      "file": "reference_2.json",
+      "source": "outputs/cac_comparison/summary.json"
+    }
+  ],
+  "updated_at": "2026-11-07T19:23:38.332511+00:00"
+}

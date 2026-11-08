@@ -207,6 +207,8 @@ class ContrastiveActorCriticTests(unittest.TestCase):
             "warm_up_steps": 0,
             "prob_contrastive": 0.0,
             "game_batch": 2,
+            # Restored by patch.multiple after the experiment's override.
+            "entropy_loss_weight": training.entropy_loss_weight,
         }
         achievements = {key: 0 for key in training.achievement_list}
         reference = {
@@ -242,7 +244,8 @@ class ContrastiveActorCriticTests(unittest.TestCase):
                 seeds=[1, 2],
                 eval_episodes=3,
                 eval_envs=2,
-                reference=reference_path,
+                references=[("PPO", reference_path)],
+                overrides={"entropy_loss_weight": "0.05"},
             )
             summary = json.loads((output / "summary.json").read_text())
             self.assertEqual(summary["status"], "completed")
@@ -251,7 +254,13 @@ class ContrastiveActorCriticTests(unittest.TestCase):
             for policy in ("cac", "random"):
                 aggregate = summary["aggregate"][policy]
                 self.assertEqual((aggregate["seeds"], aggregate["mean_return"]), (2, 2))
-            self.assertEqual(summary["reference_ppo"]["mean_return"], 5.0)
+            self.assertEqual(summary["references"]["PPO"]["mean_return"], 5.0)
+            self.assertEqual(
+                summary["experiment"]["overrides"], {"entropy_loss_weight": 0.05}
+            )
+            self.assertEqual(
+                summary["experiment"]["training"]["entropy_loss_weight"], 0.05
+            )
             seed = summary["per_seed"]["2"]
             self.assertEqual(seed["training_steps"], 4)
             self.assertEqual(seed["training_episodes"], 2)
@@ -274,6 +283,63 @@ class ContrastiveActorCriticTests(unittest.TestCase):
                 output / "seed_1/cac/checkpoint.pt", weights_only=True
             )
             self.assertEqual(checkpoint["config"]["seq_length"], 2)
+
+    def test_tuning_changes_one_value_per_candidate_and_ranks_validation(self):
+        tuning = importlib.import_module("src.sebi.tuning")
+        saved = {
+            name: getattr(training, name)
+            for name in training.config_snapshot()
+            if name != "channels_hidden"
+        }
+        tiny = {
+            "height": 16,
+            "width": 16,
+            "channels_hidden_1": 2,
+            "channels_hidden_2": 2,
+            "channels_hidden_3": 2,
+            "channels_hidden_4": 2,
+            "hidden_size_cnn": 4,
+            "num_layers_lstm": 1,
+            "hidden_size_lstm": 4,
+            "hidden_size_input": 4,
+            "seq_length": 2,
+            "num_exp": 2,
+            "num_envs": 2,
+            "vector_env": "sync",
+            "game_batch": 2,
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.multiple(training, **{**saved, **tiny}),
+            patch.object(training, "get_device", return_value=torch.device("cpu")),
+            patch.object(training.crafter, "Env", side_effect=ShortEnvironment),
+        ):
+            root = Path(directory) / "sweep"
+            plan = tuning.initialize(
+                root, seeds=[1], total_timesteps=4, validation_episodes=2
+            )
+            self.assertEqual(len(plan["tasks"]), len(tuning.ALTERNATIVES) + 1)
+            base = plan["base_config"]
+            for index in range(len(plan["tasks"])):
+                status = tuning.run_task(root, index)
+                changed = [key for key in base if status["config"][key] != base[key]]
+                self.assertEqual(changed, list(status["changes"]))
+                self.assertEqual(status["training_steps"], 4)
+            self.assertFalse((root / "baseline/seed_1/cac/checkpoint.pt").exists())
+            result = tuning.write_results(root)
+            self.assertTrue(result["all_complete"])
+            self.assertEqual(len(result["ranking"]), len(plan["candidates"]))
+            self.assertIn(
+                result["selection"]["candidate"],
+                [candidate["name"] for candidate in plan["candidates"]],
+            )
+            rows = (root / "lr_1e-3/seed_1/validation/episodes.csv").read_text()
+            self.assertIn("1800000000", rows)
+            self.assertIn("Selected:", (root / "report.html").read_text())
+            with self.assertRaises(ValueError):
+                plan["candidates"][1]["changes"]["discount"] = 0.5
+                tuning.validate_plan(plan)
+        self.assertEqual(training.entropy_loss_weight, saved["entropy_loss_weight"])
 
     def test_import_does_not_start_training(self):
         result = subprocess.run(

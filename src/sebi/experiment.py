@@ -38,18 +38,26 @@ def run_experiment(
     eval_episodes=100,
     eval_envs=16,
     checkpoint_every=10,
-    reference=None,
+    references=(),
+    overrides=None,
 ):
     seeds = list(seeds)
     if not seeds or len(set(seeds)) != len(seeds):
         raise ValueError("seeds must be a nonempty list without duplicates")
     if eval_episodes < 1 or eval_episodes > 100_000:
         raise ValueError("eval_episodes must be in [1, 100000]")
+    overrides = cac.apply_overrides(overrides or {})
     cac.validate_config(checkpoint_every)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
-    if reference is not None:
-        shutil.copyfile(reference, output / "reference_summary.json")
+    reference_index = []
+    for number, (label, path) in enumerate(references, start=1):
+        name = f"reference_{number}.json"
+        shutil.copyfile(path, output / name)
+        reference_index.append({"label": label, "file": name, "source": str(path)})
+    (output / "references.json").write_text(
+        json.dumps(reference_index, indent=2) + "\n", encoding="utf-8"
+    )
     device = cac.get_device()
     revision = git_revision()
     metadata = {
@@ -58,13 +66,14 @@ def run_experiment(
         "seeds": seeds,
         "eval_episodes": eval_episodes,
         "training": cac.config_snapshot(),
+        "overrides": overrides,
         "python": platform.python_version(),
         "torch": torch.__version__,
         "device": str(device),
         "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
         "git_revision": revision,
         "source_of_truth": "FEP project source snapshot; git revision alone excludes uncommitted edits",
-        "reference": str(reference) if reference is not None else None,
+        "references": reference_index,
     }
     if revision is None:
         print(
@@ -142,8 +151,18 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--reference",
-        type=Path,
-        help="Optional PPO summary.json evaluated on the same held-out maps.",
+        action="append",
+        default=[],
+        metavar="LABEL=PATH",
+        help="Summary.json of another experiment on the same held-out maps "
+        "(repeatable; a bare PATH is labelled PPO).",
+    )
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="Override a hyperparameter, e.g. --set entropy_loss_weight=0.01.",
     )
     parser.add_argument(
         "--output-dir",
@@ -161,5 +180,9 @@ if __name__ == "__main__":
         eval_episodes=args.eval_episodes,
         eval_envs=args.eval_envs,
         checkpoint_every=args.checkpoint_every,
-        reference=args.reference,
+        references=[
+            tuple(item.split("=", 1)) if "=" in item else ("PPO", item)
+            for item in args.reference
+        ],
+        overrides=dict(item.split("=", 1) for item in args.set),
     )

@@ -403,6 +403,34 @@ def config_snapshot():
     }
 
 
+def apply_overrides(changes):
+    """Set module-level hyperparameters, e.g. for a tuning candidate."""
+    allowed = {
+        name for name, value in config_snapshot().items() if not isinstance(value, list)
+    }
+    applied = {}
+    for name, value in changes.items():
+        if name not in allowed:
+            raise ValueError(f"Unknown hyperparameter: {name}")
+        current = globals()[name]
+        if isinstance(current, bool):
+            if isinstance(value, str):
+                value = value.strip().lower() in ("true", "1", "yes", "on")
+            value = bool(value)
+        elif isinstance(current, int):
+            number = float(value)
+            if not number.is_integer():
+                raise ValueError(f"{name} must be an integer")
+            value = int(number)
+        elif isinstance(current, float):
+            value = float(value)
+        else:
+            value = str(value).strip().lower()
+        globals()[name] = value
+        applied[name] = value
+    return applied
+
+
 def build_model(config, device):
     c1, c2, c3, c4 = config["channels_hidden"]
     lstm_model = LatentStateEncoder(

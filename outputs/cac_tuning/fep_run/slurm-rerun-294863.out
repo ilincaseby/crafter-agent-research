@@ -1,0 +1,15 @@
+Removing failed task outputs/cac_tuning/lr_1e-3/seed_2
+Removing failed task outputs/cac_tuning/seq_length_8/seed_1
+Started task 8: {'candidate': 'seq_length_8', 'seed': 1, 'seed_index': 0}
+Started task 14: {'candidate': 'lr_1e-3', 'seed': 2, 'seed_index': 1}
+Task 8 finished with code 0
+Task 14 finished with code 0
+{
+  "candidate": "critic_weight_1.0",
+  "changes": {
+    "critic_loss_weight": 1.0
+  },
+  "validation_mean_return": 1.9666666666666661,
+  "delta_vs_baseline": 0.06666666666666687,
+  "scope": "Best of 10 tested configurations after 150,000 steps; not a global optimum or a 1M-step claim"
+}

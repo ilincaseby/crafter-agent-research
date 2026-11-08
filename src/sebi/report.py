@@ -96,19 +96,34 @@ def rolling_mean(values, window=100):
     return (cumulative[1:] - cumulative[starts]) / (np.arange(len(values)) + 1 - starts)
 
 
-def reference_aggregate(root):
-    """PPO aggregate from a copied PPO summary.json, when one was supplied."""
-    path = root / "reference_summary.json"
-    if not path.exists():
-        return None
-    summary = json.loads(path.read_text(encoding="utf-8"))
-    eval_episodes = summary["experiment"]["eval_episodes"]
-    complete = [
-        entry["ppo"]
-        for entry in summary["per_seed"].values()
-        if entry.get("ppo") and entry["ppo"]["episodes"] == eval_episodes
-    ]
-    return aggregate_seeds(complete)
+def reference_aggregates(root):
+    """Aggregates of other experiments evaluated on the same held-out maps."""
+    index = root / "references.json"
+    if index.exists():
+        entries = json.loads(index.read_text(encoding="utf-8"))
+    elif (root / "reference_summary.json").exists():
+        entries = [{"label": "PPO", "file": "reference_summary.json"}]
+    else:
+        entries = []
+    result = {}
+    for entry in entries:
+        summary = json.loads((root / entry["file"]).read_text(encoding="utf-8"))
+        eval_episodes = summary["experiment"]["eval_episodes"]
+        # PPO summaries store the trained policy as "ppo", ours as "cac".
+        key = (
+            "ppo"
+            if any("ppo" in seed for seed in summary["per_seed"].values())
+            else "cac"
+        )
+        complete = [
+            seed[key]
+            for seed in summary["per_seed"].values()
+            if seed.get(key) and seed[key]["episodes"] == eval_episodes
+        ]
+        aggregate = aggregate_seeds(complete)
+        if aggregate:
+            result[entry["label"]] = aggregate
+    return result
 
 
 def generate_report(run_dir):
@@ -162,8 +177,8 @@ def generate_report(run_dir):
 
     for policy, summaries in evaluation.items():
         result["aggregate"][policy] = aggregate_seeds(summaries)
-    reference = reference_aggregate(root)
-    result["reference_ppo"] = reference
+    references = reference_aggregates(root)
+    result["references"] = references
     paired = [
         entry["cac"]["mean_return"] - entry["random"]["mean_return"]
         for entry in result["per_seed"].values()
@@ -184,10 +199,12 @@ def generate_report(run_dir):
                 rolling_mean([float(row["episodic_return"]) for row in rows]),
                 label=f"Contrastive AC seed {seed}",
             )
-    for name, aggregate, style in (
-        ("Random held-out evaluation mean", result["aggregate"]["random"], "--"),
-        ("PPO held-out evaluation mean (reference)", reference, ":"),
-    ):
+    lines = [("Random held-out evaluation mean", result["aggregate"]["random"])]
+    lines += [
+        (f"{label} held-out evaluation mean (reference)", aggregate)
+        for label, aggregate in references.items()
+    ]
+    for (name, aggregate), style in zip(lines, ("--", ":", "-.", (0, (1, 3)))):
         if aggregate:
             axis.axhline(
                 aggregate["mean_return"], color="black", linestyle=style, label=name
@@ -232,7 +249,7 @@ def generate_report(run_dir):
     images.append(figure_image(figure, "Optimization and throughput"))
 
     bars = [(LABELS[p], result["aggregate"][p]) for p in POLICIES]
-    bars.append(("PPO (reference)", reference))
+    bars += [(f"{label} (reference)", value) for label, value in references.items()]
     bars = [(label, aggregate) for label, aggregate in bars if aggregate]
     if bars:
         names = sorted(bars[0][1]["achievement_success_percent"])
@@ -254,7 +271,7 @@ def generate_report(run_dir):
     aggregate_rows = []
     for label, aggregate in (
         *((LABELS[p], result["aggregate"][p]) for p in POLICIES),
-        ("PPO (reference run)", reference),
+        *((f"{label} (reference run)", value) for label, value in references.items()),
     ):
         if aggregate:
             deviation = aggregate["std_across_seed_means"]
@@ -262,9 +279,9 @@ def generate_report(run_dir):
                 f"{deviation:.3f}" if deviation is not None else "N/A (one seed)"
             )
             seeds_text = (
-                f"{aggregate['seeds']}/{len(seeds)}"
-                if label != "PPO (reference run)"
-                else str(aggregate["seeds"])
+                str(aggregate["seeds"])
+                if label.endswith("(reference run)")
+                else f"{aggregate['seeds']}/{len(seeds)}"
             )
             aggregate_rows.append(
                 f"<tr><td>{label}</td><td>{seeds_text}</td>"
@@ -278,11 +295,18 @@ def generate_report(run_dir):
         for seed, entry in result["per_seed"].items()
     )
     reference_note = (
-        "<p>The PPO reference row comes from a separate run evaluated on the same "
-        "held-out map seeds with the same protocol; it is included for context only.</p>"
-        if reference
+        "<p>Reference rows come from separate runs evaluated on the same held-out "
+        "map seeds with the same protocol; they are included for context only.</p>"
+        if references
         else ""
     )
+    overrides = experiment.get("overrides") or {}
+    if overrides:
+        reference_note += (
+            "<p><strong>Hyperparameter overrides:</strong> "
+            + html.escape(", ".join(f"{k} = {v}" for k, v in overrides.items()))
+            + "</p>"
+        )
     document = f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Crafter contrastive actor-critic results</title>
 <style>

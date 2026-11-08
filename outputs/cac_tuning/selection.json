@@ -1,0 +1,12 @@
+{
+  "candidate": "critic_weight_1.0",
+  "changes": {
+    "critic_loss_weight": 1.0
+  },
+  "validation_mean_return": 1.9666666666666661,
+  "delta_vs_baseline": 0.06666666666666687,
+  "tied_with": [
+    "warm_up_0"
+  ],
+  "scope": "Best of 10 tested configurations after 150,000 steps; not a global optimum or a 1M-step claim"
+}

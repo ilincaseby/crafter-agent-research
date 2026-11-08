@@ -1,0 +1,12 @@
+[
+  {
+    "label": "PPO",
+    "file": "reference_1.json",
+    "source": "outputs/ppo_comparison/summary.json"
+  },
+  {
+    "label": "Contrastive AC baseline",
+    "file": "reference_2.json",
+    "source": "outputs/cac_comparison/summary.json"
+  }
+]

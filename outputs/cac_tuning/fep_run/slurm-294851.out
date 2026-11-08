@@ -1,0 +1,136 @@
+Collecting crafter==1.8.3 (from -r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 1))
+  Using cached crafter-1.8.3-py3-none-any.whl
+Collecting gym==0.26.2 (from -r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 2))
+  Using cached gym-0.26.2-py3-none-any.whl
+Collecting matplotlib==3.9.4 (from -r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached matplotlib-3.9.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (11 kB)
+Collecting numpy==1.26.4 (from -r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 4))
+  Using cached numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (61 kB)
+Requirement already satisfied: torch==2.5.1 in /opt/conda/lib/python3.11/site-packages (from -r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (2.5.1+cu121)
+Collecting imageio (from crafter==1.8.3->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 1))
+  Using cached imageio-2.38.1-py3-none-any.whl.metadata (9.7 kB)
+Requirement already satisfied: pillow in /opt/conda/lib/python3.11/site-packages (from crafter==1.8.3->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 1)) (10.2.0)
+Collecting opensimplex (from crafter==1.8.3->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 1))
+  Using cached opensimplex-0.4.5.1-py3-none-any.whl.metadata (10 kB)
+Requirement already satisfied: ruamel.yaml in /opt/conda/lib/python3.11/site-packages (from crafter==1.8.3->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 1)) (0.18.6)
+Collecting cloudpickle>=1.2.0 (from gym==0.26.2->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 2))
+  Using cached cloudpickle-3.1.2-py3-none-any.whl.metadata (7.1 kB)
+Collecting gym_notices>=0.0.4 (from gym==0.26.2->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 2))
+  Using cached gym_notices-0.1.0-py3-none-any.whl.metadata (1.2 kB)
+Collecting contourpy>=1.0.1 (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (5.5 kB)
+Collecting cycler>=0.10 (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached cycler-0.12.1-py3-none-any.whl.metadata (3.8 kB)
+Collecting fonttools>=4.22.0 (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached fonttools-4.68.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (139 kB)
+Collecting kiwisolver>=1.3.1 (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached kiwisolver-1.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.2 kB)
+Requirement already satisfied: packaging>=20.0 in /opt/conda/lib/python3.11/site-packages (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3)) (24.1)
+Collecting pyparsing>=2.3.1 (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached pyparsing-3.3.3-py3-none-any.whl.metadata (5.9 kB)
+Collecting python-dateutil>=2.7 (from matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached python_dateutil-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+Requirement already satisfied: filelock in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (3.16.1)
+Requirement already satisfied: typing-extensions>=4.8.0 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (4.12.2)
+Requirement already satisfied: networkx in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (3.4.2)
+Requirement already satisfied: jinja2 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (3.1.4)
+Requirement already satisfied: fsspec in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (2024.10.0)
+Requirement already satisfied: nvidia-cuda-nvrtc-cu12==12.1.105 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.105)
+Requirement already satisfied: nvidia-cuda-runtime-cu12==12.1.105 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.105)
+Requirement already satisfied: nvidia-cuda-cupti-cu12==12.1.105 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.105)
+Requirement already satisfied: nvidia-cudnn-cu12==9.1.0.70 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (9.1.0.70)
+Requirement already satisfied: nvidia-cublas-cu12==12.1.3.1 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.3.1)
+Requirement already satisfied: nvidia-cufft-cu12==11.0.2.54 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (11.0.2.54)
+Requirement already satisfied: nvidia-curand-cu12==10.3.2.106 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (10.3.2.106)
+Requirement already satisfied: nvidia-cusolver-cu12==11.4.5.107 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (11.4.5.107)
+Requirement already satisfied: nvidia-cusparse-cu12==12.1.0.106 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.0.106)
+Requirement already satisfied: nvidia-nccl-cu12==2.21.5 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (2.21.5)
+Requirement already satisfied: nvidia-nvtx-cu12==12.1.105 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.105)
+Requirement already satisfied: triton==3.1.0 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (3.1.0)
+Requirement already satisfied: sympy==1.13.1 in /opt/conda/lib/python3.11/site-packages (from torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (1.13.1)
+Requirement already satisfied: nvidia-nvjitlink-cu12 in /opt/conda/lib/python3.11/site-packages (from nvidia-cusolver-cu12==11.4.5.107->torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (12.1.105)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /opt/conda/lib/python3.11/site-packages (from sympy==1.13.1->torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (1.3.0)
+Collecting tzdata (from python-dateutil>=2.7->matplotlib==3.9.4->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 3))
+  Using cached tzdata-2026.6-py2.py3-none-any.whl.metadata (1.4 kB)
+Requirement already satisfied: MarkupSafe>=2.0 in /opt/conda/lib/python3.11/site-packages (from jinja2->torch==2.5.1->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 5)) (3.0.2)
+Requirement already satisfied: ruamel.yaml.clib>=0.2.7 in /opt/conda/lib/python3.11/site-packages (from ruamel.yaml->crafter==1.8.3->-r /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/project/src/sebi/requirements.txt (line 1)) (0.2.8)
+Using cached matplotlib-3.9.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (8.3 MB)
+Using cached numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (18.3 MB)
+Using cached cloudpickle-3.1.2-py3-none-any.whl (22 kB)
+Using cached contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (355 kB)
+Using cached cycler-0.12.1-py3-none-any.whl (8.3 kB)
+Using cached fonttools-4.68.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.5 MB)
+Using cached gym_notices-0.1.0-py3-none-any.whl (3.3 kB)
+Using cached kiwisolver-1.5.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (1.4 MB)
+Using cached pyparsing-3.3.3-py3-none-any.whl (126 kB)
+Using cached python_dateutil-4.0.0-py3-none-any.whl (92 kB)
+Using cached imageio-2.38.1-py3-none-any.whl (328 kB)
+Using cached opensimplex-0.4.5.1-py3-none-any.whl (267 kB)
+Using cached tzdata-2026.6-py2.py3-none-any.whl (348 kB)
+Installing collected packages: gym_notices, tzdata, pyparsing, numpy, kiwisolver, fonttools, cycler, cloudpickle, python-dateutil, opensimplex, imageio, gym, contourpy, matplotlib, crafter
+  Attempting uninstall: numpy
+    Found existing installation: numpy 2.1.2
+    Not uninstalling numpy at /opt/conda/lib/python3.11/site-packages, outside environment /export/home/acs/stud/r/robert.vulpe/AAIT_HW1/CAC_TUNING_20261107T162726_154032Z/.venv
+    Can't uninstall 'numpy'. No files were found to uninstall.
+Successfully installed cloudpickle-3.1.2 contourpy-1.3.3 crafter-1.8.3 cycler-0.12.1 fonttools-4.68.0 gym-0.26.2 gym_notices-0.1.0 imageio-2.38.1 kiwisolver-1.5.1 matplotlib-3.9.4 numpy-1.26.4 opensimplex-0.4.5.1 pyparsing-3.3.3 python-dateutil-4.0.0 tzdata-2026.6
+Initialized 30 tasks: outputs/cac_tuning/sweep.json
+Started task 0: {'candidate': 'baseline', 'seed': 1, 'seed_index': 0}
+Started task 1: {'candidate': 'entropy_0.01', 'seed': 1, 'seed_index': 0}
+Started task 2: {'candidate': 'entropy_0.001', 'seed': 1, 'seed_index': 0}
+Started task 3: {'candidate': 'lr_1e-4', 'seed': 1, 'seed_index': 0}
+Started task 4: {'candidate': 'lr_1e-3', 'seed': 1, 'seed_index': 0}
+Task 1 finished with code 0
+Task 3 finished with code 0
+Started task 5: {'candidate': 'discount_0.99', 'seed': 1, 'seed_index': 0}
+Started task 6: {'candidate': 'critic_weight_1.0', 'seed': 1, 'seed_index': 0}
+Task 0 finished with code 0
+Started task 7: {'candidate': 'game_batch_256', 'seed': 1, 'seed_index': 0}
+Task 4 finished with code 0
+Started task 8: {'candidate': 'seq_length_8', 'seed': 1, 'seed_index': 0}
+Task 2 finished with code 0
+Started task 9: {'candidate': 'warm_up_0', 'seed': 1, 'seed_index': 0}
+Task 8 finished with code 1
+Started task 10: {'candidate': 'baseline', 'seed': 2, 'seed_index': 1}
+Task 7 finished with code 0
+Started task 11: {'candidate': 'entropy_0.01', 'seed': 2, 'seed_index': 1}
+Task 5 finished with code 0
+Started task 12: {'candidate': 'entropy_0.001', 'seed': 2, 'seed_index': 1}
+Task 6 finished with code 0
+Started task 13: {'candidate': 'lr_1e-4', 'seed': 2, 'seed_index': 1}
+Task 9 finished with code 0
+Started task 14: {'candidate': 'lr_1e-3', 'seed': 2, 'seed_index': 1}
+Task 10 finished with code 0
+Started task 15: {'candidate': 'discount_0.99', 'seed': 2, 'seed_index': 1}
+Task 14 finished with code 1
+Started task 16: {'candidate': 'critic_weight_1.0', 'seed': 2, 'seed_index': 1}
+Task 11 finished with code 0
+Started task 17: {'candidate': 'game_batch_256', 'seed': 2, 'seed_index': 1}
+Task 12 finished with code 0
+Started task 18: {'candidate': 'seq_length_8', 'seed': 2, 'seed_index': 1}
+Task 13 finished with code 0
+Started task 19: {'candidate': 'warm_up_0', 'seed': 2, 'seed_index': 1}
+Task 15 finished with code 0
+Started task 20: {'candidate': 'baseline', 'seed': 3, 'seed_index': 2}
+Task 16 finished with code 0
+Started task 21: {'candidate': 'entropy_0.01', 'seed': 3, 'seed_index': 2}
+Task 17 finished with code 0
+Started task 22: {'candidate': 'entropy_0.001', 'seed': 3, 'seed_index': 2}
+Task 18 finished with code 0
+Started task 23: {'candidate': 'lr_1e-4', 'seed': 3, 'seed_index': 2}
+Task 19 finished with code 0
+Started task 24: {'candidate': 'lr_1e-3', 'seed': 3, 'seed_index': 2}
+Task 20 finished with code 0
+Started task 25: {'candidate': 'discount_0.99', 'seed': 3, 'seed_index': 2}
+Task 21 finished with code 0
+Task 22 finished with code 0
+Started task 26: {'candidate': 'critic_weight_1.0', 'seed': 3, 'seed_index': 2}
+Started task 27: {'candidate': 'game_batch_256', 'seed': 3, 'seed_index': 2}
+Task 23 finished with code 0
+Started task 28: {'candidate': 'seq_length_8', 'seed': 3, 'seed_index': 2}
+Task 24 finished with code 0
+Started task 29: {'candidate': 'warm_up_0', 'seed': 3, 'seed_index': 2}
+Task 25 finished with code 0
+Task 27 finished with code 0
+Task 26 finished with code 0
+Task 28 finished with code 0
+Task 29 finished with code 0

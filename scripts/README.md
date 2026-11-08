@@ -168,6 +168,38 @@ under `seed_N/cac/`, evaluations under `seed_N/eval_cac/` and
 `seed_N/eval_random/`, and `report.html`/`summary.json` at its root;
 `python src/sebi/report.py --run-dir <dir>` regenerates the report.
 
+### Hyperparameter sweep
+
+`src/sebi/tuning.py run --parallel 5` runs a one-at-a-time sweep: every
+candidate in `ALTERNATIVES` changes exactly one hyperparameter of the baseline,
+trains from scratch for 150k steps on seeds 1-3, and is evaluated on 50
+validation maps per seed (environment seeds from 1.8e9, disjoint from the
+held-out maps). Tasks run as parallel processes sharing one GPU; checkpoints are
+deleted after validation to stay within the FEP quota. Candidates are ranked by
+the seed-mean validation return (exact ties keep the plan order), and
+`selection.json`, `results.json`, and `report.html` are written to the sweep
+directory. A selected change is then trained for 1M steps with
+`experiment.py --set NAME=VALUE`, adding earlier runs through
+`--reference LABEL=PATH`:
+
+```bash
+python3 scripts/launch_fep.py --algorithm CAC_TUNING \
+  --entrypoint src/sebi/tuning.py --image '~/images/qwen25-coder-sft.sif' \
+  --requirements src/sebi/requirements.txt --cpus-per-task 86 --mem 96G \
+  --time 04:00:00 -- run --parallel 5 --output-dir outputs/cac_tuning
+python3 scripts/launch_fep.py --algorithm CAC_TUNED \
+  --entrypoint src/sebi/experiment.py --image '~/images/qwen25-coder-sft.sif' \
+  --requirements src/sebi/requirements.txt --cpus-per-task 17 --mem 32G \
+  -- --output-dir outputs/cac_tuned --set critic_loss_weight=1.0 \
+  --reference PPO=outputs/ppo_comparison/summary.json \
+  --reference "Contrastive AC baseline=outputs/cac_comparison/summary.json"
+```
+
+Crafter keeps each chunk's objects in a Python `set`, so creature
+spawning/despawning depends on memory addresses: rollouts on the same initial
+map can differ between processes. Comparisons share initial maps, not exact
+trajectories.
+
 ## FEP resources and monitoring
 
 Change resources using `--account`, `--partition`, `--cpus-per-task`, `--mem`,
