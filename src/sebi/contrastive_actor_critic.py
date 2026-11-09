@@ -394,7 +394,9 @@ def train_actor_critic(model, optimizer, buffers):
     return result
 
 
-def save_plots(output_dir):
+def save_plots(
+    output_dir, extra_labels=None, x_key="iteration", x_label="Training iteration"
+):
     with (output_dir / "metrics.jsonl").open(encoding="utf-8") as metrics_file:
         history = [json.loads(line) for line in metrics_file]
     plot_dir = output_dir / "plots"
@@ -411,6 +413,7 @@ def save_plots(output_dir):
         "value_abs_mean": "Mean absolute predicted value",
         "reward_abs_mean": "Mean absolute transition reward",
     }
+    labels.update(extra_labels or {})
     for key, label in labels.items():
         values = [record.get(key) for record in history]
         if not any(value is not None for value in values):
@@ -419,11 +422,11 @@ def save_plots(output_dir):
         FigureCanvasAgg(figure)
         axis = figure.subplots()
         axis.plot(
-            [record["iteration"] for record in history],
+            [record[x_key] for record in history],
             [float("nan") if value is None else value for value in values],
             marker=".",
         )
-        axis.set(xlabel="Training iteration", ylabel=label, title=label)
+        axis.set(xlabel=x_label, ylabel=label, title=label)
         axis.grid(alpha=0.3)
         figure.savefig(plot_dir / f"{key}.png")
         figure.clear()

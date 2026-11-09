@@ -128,7 +128,12 @@ class LatentStateEncoder(nn.Module):
 
 class ActorCritic(nn.Module):
     def __init__(
-        self, latent_space_encoder_model, num_layers, hidden_size, num_actions
+        self,
+        latent_space_encoder_model,
+        num_layers,
+        hidden_size,
+        num_actions,
+        head_sizes=(2048, 1024),
     ):
         super().__init__()
         self.num_actions = num_actions
@@ -136,18 +141,18 @@ class ActorCritic(nn.Module):
         self.hidden_size = hidden_size
         self.lse_model = latent_space_encoder_model
         self.actor_net = nn.Sequential(
-            nn.Linear(hidden_size, 2048),
+            nn.Linear(hidden_size, head_sizes[0]),
             nn.ReLU(),
-            nn.Linear(2048, 1024),
+            nn.Linear(head_sizes[0], head_sizes[1]),
             nn.ReLU(),
-            nn.Linear(1024, num_actions),
+            nn.Linear(head_sizes[1], num_actions),
         )
         self.critic_net = nn.Sequential(
-            nn.Linear(hidden_size, 2048),
+            nn.Linear(hidden_size, head_sizes[0]),
             nn.ReLU(),
-            nn.Linear(2048, 1024),
+            nn.Linear(head_sizes[0], head_sizes[1]),
             nn.ReLU(),
-            nn.Linear(1024, 1),
+            nn.Linear(head_sizes[1], 1),
         )
 
     def forward(self, x):
