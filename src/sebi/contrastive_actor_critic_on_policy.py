@@ -132,7 +132,8 @@ class ContrastiveTrainer:
         examples = self.rng.sample(list(self.replay), count)
         observations = torch.stack([example[0] for example in examples])
         labels = torch.stack([example[1] for example in examples]).to(device)
-        model.eval()
+        # cuDNN LSTM backward requires a training-mode forward.
+        model.train()
         self.optimizer.zero_grad(set_to_none=True)
         embeddings, _ = model.lse_model(model_input(observations, device))
         loss = supervised_contrastive_loss(
@@ -141,6 +142,7 @@ class ContrastiveTrainer:
             self.config.contrastive_temperature,
         )
         if loss is None:
+            model.eval()
             logger.warning(
                 "Skipping contrastive update: no anchors with both positive and negative examples"
             )
@@ -154,6 +156,7 @@ class ContrastiveTrainer:
             self.config.contrastive_max_grad_norm,
             error_if_nonfinite=True,
         )
+        model.eval()
         # The reference is the current post-RL model, never a stale encoder clone.
         encoder_before = deepcopy(model.lse_model.state_dict())
         optimizer_before = deepcopy(self.optimizer.state_dict())

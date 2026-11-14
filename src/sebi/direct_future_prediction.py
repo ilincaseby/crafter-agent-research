@@ -151,6 +151,25 @@ def initial_measurements(reward_scale):
     )
 
 
+class SpatialMeanPool4x4(nn.Module):
+    """Adaptive 4x4 means without the nondeterministic CUDA pooling backward."""
+
+    def forward(self, features):
+        batch, channels, height, width = features.shape
+        if height % 4 == 0 and width % 4 == 0:
+            return features.reshape(
+                batch, channels, 4, height // 4, 4, width // 4
+            ).mean(dim=(3, 5))
+        # Match adaptive pooling's overlapping floor/ceil bins at uneven sizes.
+        cells = []
+        for row in range(4):
+            top, bottom = row * height // 4, ((row + 1) * height + 3) // 4
+            for column in range(4):
+                left, right = column * width // 4, ((column + 1) * width + 3) // 4
+                cells.append(features[:, :, top:bottom, left:right].mean(dim=(-2, -1)))
+        return torch.stack(cells, dim=-1).reshape(batch, channels, 4, 4)
+
+
 class FuturePredictor(nn.Module):
     def __init__(self, config, num_actions):
         super().__init__()
@@ -164,7 +183,7 @@ class FuturePredictor(nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 32, 3, 2, 1),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),
+            SpatialMeanPool4x4(),
             nn.Flatten(),
             nn.Linear(32 * 4 * 4, 128),
             nn.ReLU(),
