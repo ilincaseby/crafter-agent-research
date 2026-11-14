@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -18,11 +19,70 @@ launcher = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(launcher)
 
 
+class SnapshotTests(unittest.TestCase):
+    def test_scp_fallback_excludes_environments_and_git_but_preserves_results(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in (
+                ".git",
+                ".venv/large.bin",
+                "venv/large.bin",
+                "__pycache__/module.pyc",
+                "module.pyc",
+                "src/train.py",
+                "outputs/previous.csv",
+            ):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("data")
+            contents = []
+
+            def capture(command, check):
+                self.assertEqual(command[:4], ["scp", "-q", "-o", "BatchMode=yes"])
+                with tarfile.open(command[4]) as archive:
+                    contents.extend(member.name for member in archive.getmembers())
+
+            with (
+                patch.object(launcher.shutil, "which", return_value=None),
+                patch.object(launcher.subprocess, "run", side_effect=capture),
+                patch.object(launcher, "ssh") as ssh,
+                redirect_stdout(io.StringIO()),
+            ):
+                launcher.rsync(root, "fep", "/remote/run/project", project=True)
+            self.assertIn("./src/train.py", contents)
+            self.assertIn("./outputs/previous.csv", contents)
+            self.assertFalse(
+                any(
+                    part in {".git", ".venv", "venv", "__pycache__"}
+                    for name in contents
+                    for part in Path(name).parts
+                )
+            )
+            self.assertFalse(any(name.endswith(".pyc") for name in contents))
+            self.assertIn("tar -xzf", ssh.call_args.args[1])
+            self.assertIn(" -C /remote/run/project; rm -- ", ssh.call_args.args[1])
+
+    def test_failed_scp_never_extracts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch.object(
+                    launcher.subprocess,
+                    "run",
+                    side_effect=subprocess.CalledProcessError(1, "scp"),
+                ),
+                patch.object(launcher, "ssh") as ssh,
+                redirect_stdout(io.StringIO()),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    launcher.scp_snapshot(Path(temporary), "fep", "/remote/project")
+            ssh.assert_not_called()
+
+
 class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.entrypoint = "src/ddqn/vanilla_q_learning.py"
         (self.root / self.entrypoint).parent.mkdir(parents=True)
         (self.root / self.entrypoint).write_text("black box")
@@ -74,6 +134,7 @@ class LauncherTests(unittest.TestCase):
             if not project:
                 captured["config"] = json.loads((source / "launch.json").read_text())
                 captured["job"] = (source / "job.slurm").read_text()
+                self.assertNotIn(b"\r\n", (source / "job.slurm").read_bytes())
 
         def submit(host, command):
             events.append("submit")

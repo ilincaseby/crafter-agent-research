@@ -1,0 +1,9 @@
+{
+  "policy": "ppo",
+  "checkpoint": "outputs/ppo_comparison/seed_1/ppo/checkpoint.pt",
+  "episodes": 100,
+  "seed_start": 1000000000,
+  "max_episode_steps": 10000,
+  "device": "cuda",
+  "action_selection": "sampled categorical"
+}

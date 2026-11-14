@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -102,7 +103,6 @@ def stage_directory(host, image, run_name):
 umask 077
 cd "$HOME"
 command -v sbatch >/dev/null
-command -v rsync >/dev/null
 image={shlex.quote(image)}
 [[ "$image" = /* ]] || image="$HOME/$image"
 [[ -f "$image" && -r "$image" ]] || {{ echo "Unreadable container image: $image" >&2; exit 1; }}
@@ -176,6 +176,8 @@ exec "$container" exec --nv --bind {quote(run_dir + ':' + run_dir)} \\
 
 
 def rsync(source, host, destination, project=False):
+    if shutil.which("rsync") is None:
+        return scp_snapshot(source, host, destination, project)
     command = ["rsync", "-az", "--protect-args"]
     if project:
         command += [
@@ -190,11 +192,50 @@ def rsync(source, host, destination, project=False):
     subprocess.run(command, check=True)
 
 
+def scp_snapshot(source, host, destination, project=False):
+    """Use an SSH-extracted archive when rsync is unavailable (e.g. Windows)."""
+    excluded = {".git", ".venv", "venv", "__pycache__"}
+
+    def include(member):
+        path = Path(member.name)
+        if project and (
+            any(part in excluded for part in path.parts) or path.name.endswith(".pyc")
+        ):
+            return None
+        return member
+
+    with tempfile.TemporaryDirectory(prefix="fep-snapshot-") as temporary:
+        archive = Path(temporary) / "snapshot.tar.gz"
+        remote_archive = destination + "/." + Path(temporary).name + ".tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(source, arcname=".", filter=include)
+        command = [
+            "scp",
+            "-q",
+            "-o",
+            "BatchMode=yes",
+            str(archive),
+            f"{host}:{remote_archive}",
+        ]
+        print("+ " + shlex.join(command), flush=True)
+        subprocess.run(command, check=True)
+        ssh(
+            host,
+            "set -euo pipefail; tar -xzf "
+            + shlex.quote(remote_archive)
+            + " -C "
+            + shlex.quote(destination)
+            + "; rm -- "
+            + shlex.quote(remote_archive),
+        )
+
+
 def main(argv=None):
     args = parse_args(argv)
-    for tool in ("ssh", "rsync"):
-        if shutil.which(tool) is None:
-            raise ValueError(f"Required local command is missing: {tool}")
+    if shutil.which("ssh") is None:
+        raise ValueError("Required local command is missing: ssh")
+    if not any(shutil.which(tool) for tool in ("rsync", "scp")):
+        raise ValueError("A local rsync or scp command is required")
     created = datetime.now(timezone.utc)
     run_name = args.algorithm + "_" + created.strftime("%Y%m%dT%H%M%S_%fZ")
     run_dir, image = stage_directory(args.host, args.image, run_name)
@@ -223,7 +264,9 @@ def main(argv=None):
     with tempfile.TemporaryDirectory(prefix="fep-training-") as temporary:
         artifacts = Path(temporary)
         (artifacts / "launch.json").write_text(json.dumps(config, indent=2) + "\n")
-        (artifacts / "job.slurm").write_text(render_job(args, run_dir, image))
+        (artifacts / "job.slurm").write_bytes(
+            render_job(args, run_dir, image).encode("utf-8")
+        )
         rsync(artifacts, args.host, run_dir)
     submit = (
         "set -euo pipefail; cd "
@@ -259,6 +302,8 @@ def main(argv=None):
             ]
         )
     )
+    print("Without rsync, retrieve with scp:")
+    print(shlex.join(["scp", "-r", f"{args.host}:{run_dir}", f"./{run_name}"]))
 
 
 if __name__ == "__main__":
